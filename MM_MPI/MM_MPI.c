@@ -1,7 +1,7 @@
 /** 
 	TP Géosciences HPC Master 1 - USTHB.
-	Pour compiler: mpicc -o MM MM.c
-	Pour executer: mpiexec -np 5 ./MM
+	Pour compiler: mpicc -o MM_MPI MM_MPI.c
+	Pour executer: mpiexec -np 6 ./MM_MPI
 	*
 	*
 	np: le nombre de processus.
