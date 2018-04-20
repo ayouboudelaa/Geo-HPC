@@ -25,7 +25,7 @@ typedef float matrix[N][N];
 
 // Remplir une matrice avec des nombres réeles aléatoires.
 #define _fill(M) fillMatrix(M)
-float * fillMatrix(matrix M) {
+float fillMatrix(matrix M) {
 	foreach(i, 0, N) {
 		foreach(j, 0, N) {
 			M[i][j] = rand() % MAX_RAND; // Les nombres aléatoires ne dépasssent pas MAX_RAND.
