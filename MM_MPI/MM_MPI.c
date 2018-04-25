@@ -1,7 +1,7 @@
 /** 
 	TP Géosciences HPC Master 1 - USTHB.
 	Pour compiler: mpicc -o MM_MPI MM_MPI.c
-	Pour executer: mpiexec -np 6 ./MM_MPI
+	Pour executer: mpiexec -np 5 ./MM_MPI
 	*
 	*
 	np: le nombre de processus.
@@ -87,81 +87,128 @@ int main() {
 		_fill(A); // Remplir la matrice A.
 		_fill(B); // Remplir la matrice B.
 
-		_print(A); // Afficher la matrice A.
-		_print(B); // Afficher la matrice B.
+		// _print(A); // Afficher la matrice A.
+		// _print(B); // Afficher la matrice B.
 	}
 
-	printf("Broadcasting ...\n");
+	// printf("Broadcasting ...\n");
 	MPI_Bcast(&B, N*N, MPI_FLOAT, MASTER, MPI_COMM_WORLD);
 
-	if (workerId == MASTER) {
+	workerRows = N / workersNumber;
 
-		/** Calculer le nombre de lignes qui seront traitées par chaque processus, 
-			en divisant la taille de la matrice (N) sur le nombre de processus moins 1 (moins le processus master, car il va pas contribuer à la multiplication). **/
-		workerRows = N / (workersNumber - 1);
-		// Si la taille du matrice n'est pas divisible sur le nombre de processus, calculer le nombre de lignes qui restent.
-		remaining = N % (workersNumber - 1);
+	float recvA[workerRows][N], recvC[workerRows][N];
 
-		offset = 0; // Nous permet de garder l'indice du prochain ensemble de lignes à envoyer. Initialement on commence par 0.
+	MPI_Scatter(
+		A, // Les données à envoyer.
+		workerRows*N, // La taille du morceau à envoyer
+		MPI_FLOAT, // Le type de données à envoyer.
+		recvA, // Les données à recevoir.
+		workerRows*N, // La taille du morceau à recevoir.
+		MPI_FLOAT, // Le type de données à recevoir.
+		MASTER, // Root.
+		MPI_COMM_WORLD);
 
-		// Parcourir les processus sauf le master.
-		foreach(worker, 1, workersNumber) {
+	// printf("Starting multiplication by worker %d processor %s ...\n", workerId, processorName);
 
-			// Distribuer les lignes qui restent (en cas ou N n'est pas divisible sur (workersNumber - 1)) sur l'ensemble de processus qui ont un ID inferieur ou égale au nombre de lignes qui restent.
-			if (worker <= remaining) {
-				workerRows += 1;
-				remaining -= 1;
-				printf("remaining %d\n", remaining);
-			}
+	// _print(recvA);
+	//printf("\n");
 
-			printf("Sending %d rows to worker %d with offset %d from processor %s ...\n", 
-                workerRows, worker, offset, processorName);
-            
-            MPI_Send(&offset, 1, MPI_INT, worker, 0, MPI_COMM_WORLD); // Envoyer l'offset.
-            MPI_Send(&workerRows, 1, MPI_INT, worker, 0, MPI_COMM_WORLD); // Envoyer le nombre de lignes de chaque processus.
-            MPI_Send(&A[offset][0], workerRows*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer à chaque processus sa partie de données de la matrice A selon l'offset et le nombre de lignes à traiter. 
-            // MPI_Send(&B, N*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer la matrice B dans sa globalité.
-
-            offset += workerRows; // Ajouter le nombre de lignes envoyées à l'offset pour obtenir l'indice de la séquence prochaine de lignes pour l'envoyer au processus suivant.
-		}
-
-		foreach(worker, 1, workersNumber) {
-            printf("Receiving results from worker %d ...\n", worker);
-
-            MPI_Recv(&offset, 1, MPI_INT, worker, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir l'offset pour bien placer les données dans la matrice.
-            MPI_Recv(&workerRows, 1, MPI_INT, worker, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir le nombre de lignes traitées.
-            MPI_Recv(&C[offset][0], workerRows*N, MPI_FLOAT, worker, 1, MPI_COMM_WORLD, &status); // Recevoir et placer le résultat de la multiplication dans C selon l'offset et le nombre de lignes traitées.
-        }
-
-        end = MPI_Wtime(); // Récupérer le temps de fin d'execution.
-
-        _print(C);
-
-        printf("Elapsed time: %f\n", end - start); // Calculer le temps d'execution.
-
-	} else {
-		/** Le code dans ce bloc sera executer par les autres processus. **/
-
-		MPI_Recv(&offset, 1, MPI_INT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir l'offset.
-        MPI_Recv(&workerRows, 1, MPI_INT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir le nombre de lignes à traiter.
-        MPI_Recv(&A, workerRows*N, MPI_INT, MASTER, 0, MPI_COMM_WORLD, &status); // Recevoir la partie de données de la matrice A pour le processus courant.
-        // MPI_Recv(&B, N*N, MPI_FLOAT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir la matrice B.
-
-        printf("Starting multiplication by worker %d processor %s ...\n", workerId, processorName);
-
-        // Effectuer la multiplication pour l'ensemble de données reçues.
-		foreach(i, 0, workerRows) {
-			foreach(j, 0, N) {
-				foreach(k, 0, N) {
-					C[i][j] += A[i][k] * B[k][j];
-				}
+	foreach(i, 0, workerRows) {
+		foreach(j, 0, N) {
+			recvC[i][j] = 0;
+			foreach(k, 0, N) {
+				recvC[i][j] += recvA[i][k] * B[k][j];
 			}
 		}
-
-		MPI_Send(&offset, 1, MPI_INT, MASTER, 1, MPI_COMM_WORLD); // Envoyer l'offset au master pour placer les données dans la matrice C.
-        MPI_Send(&workerRows, 1, MPI_INT, MASTER, 1, MPI_COMM_WORLD); // Envoyer le nombre de lignes traitées au master.
-        MPI_Send(&C, workerRows*N, MPI_FLOAT, MASTER, 1, MPI_COMM_WORLD); // Envoyer le resultat de la partie traitée.
 	}
+
+	MPI_Gather(
+		recvC,
+		workerRows*N,
+		MPI_FLOAT,
+		C,
+		workerRows*N,
+		MPI_FLOAT,
+		MASTER,
+		MPI_COMM_WORLD);
+
+	if (workerId == MASTER) {
+		_print(C);
+
+		end = MPI_Wtime();
+
+		printf("\n");
+		printf("Elapsed time: %f\n", end - start);
+	}
+
+	// if (workerId == MASTER) {
+
+	// 	/** Calculer le nombre de lignes qui seront traitées par chaque processus, 
+	// 		en divisant la taille de la matrice (N) sur le nombre de processus moins 1 (moins le processus master, car il va pas contribuer à la multiplication). **/
+	// 	workerRows = N / (workersNumber - 1);
+	// 	// Si la taille du matrice n'est pas divisible sur le nombre de processus, calculer le nombre de lignes qui restent.
+	// 	remaining = N % (workersNumber - 1);
+
+	// 	offset = 0; // Nous permet de garder l'indice du prochain ensemble de lignes à envoyer. Initialement on commence par 0.
+
+	// 	// Parcourir les processus sauf le master.
+	// 	foreach(worker, 1, workersNumber) {
+
+	// 		// Distribuer les lignes qui restent (en cas ou N n'est pas divisible sur (workersNumber - 1)) sur l'ensemble de processus qui ont un ID inferieur ou égale au nombre de lignes qui restent.
+	// 		if (worker <= remaining) {
+	// 			workerRows += 1;
+	// 			remaining -= 1;
+	// 			printf("remaining %d\n", remaining);
+	// 		}
+
+	// 		printf("Sending %d rows to worker %d with offset %d from processor %s ...\n", 
+    //             workerRows, worker, offset, processorName);
+            
+    //         MPI_Send(&offset, 1, MPI_INT, worker, 0, MPI_COMM_WORLD); // Envoyer l'offset.
+    //         MPI_Send(&workerRows, 1, MPI_INT, worker, 0, MPI_COMM_WORLD); // Envoyer le nombre de lignes de chaque processus.
+    //         MPI_Send(&A[offset][0], workerRows*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer à chaque processus sa partie de données de la matrice A selon l'offset et le nombre de lignes à traiter. 
+    //         // MPI_Send(&B, N*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer la matrice B dans sa globalité.
+
+    //         offset += workerRows; // Ajouter le nombre de lignes envoyées à l'offset pour obtenir l'indice de la séquence prochaine de lignes pour l'envoyer au processus suivant.
+	// 	}
+
+	// 	foreach(worker, 1, workersNumber) {
+    //         printf("Receiving results from worker %d ...\n", worker);
+
+    //         MPI_Recv(&offset, 1, MPI_INT, worker, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir l'offset pour bien placer les données dans la matrice.
+    //         MPI_Recv(&workerRows, 1, MPI_INT, worker, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir le nombre de lignes traitées.
+    //         MPI_Recv(&C[offset][0], workerRows*N, MPI_FLOAT, worker, 1, MPI_COMM_WORLD, &status); // Recevoir et placer le résultat de la multiplication dans C selon l'offset et le nombre de lignes traitées.
+    //     }
+
+    //     end = MPI_Wtime(); // Récupérer le temps de fin d'execution.
+
+    //     _print(C);
+
+    //     printf("Elapsed time: %f\n", end - start); // Calculer le temps d'execution.
+
+	// } else {
+	// 	/** Le code dans ce bloc sera executer par les autres processus. **/
+
+	// 	MPI_Recv(&offset, 1, MPI_INT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir l'offset.
+    //     MPI_Recv(&workerRows, 1, MPI_INT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir le nombre de lignes à traiter.
+    //     MPI_Recv(&A, workerRows*N, MPI_INT, MASTER, 0, MPI_COMM_WORLD, &status); // Recevoir la partie de données de la matrice A pour le processus courant.
+    //     // MPI_Recv(&B, N*N, MPI_FLOAT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir la matrice B.
+
+    //     printf("Starting multiplication by worker %d processor %s ...\n", workerId, processorName);
+
+    //     // Effectuer la multiplication pour l'ensemble de données reçues.
+	// 	foreach(i, 0, workerRows) {
+	// 		foreach(j, 0, N) {
+	// 			foreach(k, 0, N) {
+	// 				C[i][j] += A[i][k] * B[k][j];
+	// 			}
+	// 		}
+	// 	}
+
+	// 	MPI_Send(&offset, 1, MPI_INT, MASTER, 1, MPI_COMM_WORLD); // Envoyer l'offset au master pour placer les données dans la matrice C.
+    //     MPI_Send(&workerRows, 1, MPI_INT, MASTER, 1, MPI_COMM_WORLD); // Envoyer le nombre de lignes traitées au master.
+    //     MPI_Send(&C, workerRows*N, MPI_FLOAT, MASTER, 1, MPI_COMM_WORLD); // Envoyer le resultat de la partie traitée.
+	// }
 
 	MPI_Finalize(); // Fin de l'environnement MPI.
 
