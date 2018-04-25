@@ -89,6 +89,12 @@ int main() {
 
 		_print(A); // Afficher la matrice A.
 		_print(B); // Afficher la matrice B.
+	}
+
+	printf("Broadcasting ...\n");
+	MPI_Bcast(&B, N*N, MPI_FLOAT, MASTER, MPI_COMM_WORLD);
+
+	if (workerId == MASTER) {
 
 		/** Calculer le nombre de lignes qui seront traitées par chaque processus, 
 			en divisant la taille de la matrice (N) sur le nombre de processus moins 1 (moins le processus master, car il va pas contribuer à la multiplication). **/
@@ -114,7 +120,7 @@ int main() {
             MPI_Send(&offset, 1, MPI_INT, worker, 0, MPI_COMM_WORLD); // Envoyer l'offset.
             MPI_Send(&workerRows, 1, MPI_INT, worker, 0, MPI_COMM_WORLD); // Envoyer le nombre de lignes de chaque processus.
             MPI_Send(&A[offset][0], workerRows*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer à chaque processus sa partie de données de la matrice A selon l'offset et le nombre de lignes à traiter. 
-            MPI_Send(&B, N*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer la matrice B dans sa globalité.
+            // MPI_Send(&B, N*N, MPI_FLOAT, worker, 0, MPI_COMM_WORLD); // Envoyer la matrice B dans sa globalité.
 
             offset += workerRows; // Ajouter le nombre de lignes envoyées à l'offset pour obtenir l'indice de la séquence prochaine de lignes pour l'envoyer au processus suivant.
 		}
@@ -139,7 +145,7 @@ int main() {
 		MPI_Recv(&offset, 1, MPI_INT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir l'offset.
         MPI_Recv(&workerRows, 1, MPI_INT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir le nombre de lignes à traiter.
         MPI_Recv(&A, workerRows*N, MPI_INT, MASTER, 0, MPI_COMM_WORLD, &status); // Recevoir la partie de données de la matrice A pour le processus courant.
-        MPI_Recv(&B, N*N, MPI_FLOAT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir la matrice B.
+        // MPI_Recv(&B, N*N, MPI_FLOAT, MASTER, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // Recevoir la matrice B.
 
         printf("Starting multiplication by worker %d processor %s ...\n", workerId, processorName);
 
